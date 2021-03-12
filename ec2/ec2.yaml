@@ -223,9 +223,6 @@ Resources:
         - Key: Name
           Value:
             Fn::Sub: "${AWS::StackName}-LB"
-      LoadBalancerAttributes:
-        - Key: load_balancing.cross_zone.enabled
-          Value: "true"
 
   TargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
