@@ -229,8 +229,9 @@ Resources:
     Properties:
       Name: !Sub '${AWS::StackName}-TG'
       Port: 8080
-      Protocol: TCP
+      Protocol: HTTP
       HealthCheckPort: "8080"
+      HealthCheckPath: /login
       TargetType: instance
       Targets:
         - Id: !Ref appnode
