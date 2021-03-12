@@ -200,8 +200,6 @@ Resources:
             cp target/profile-apps-v1.war /usr/local/tomcat8/webapps/ROOT.war
             systemctl start tomcat
             sleep 300
-            systemctl restart tomcat8
-            sleep 100
             REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone| sed 's/.$//')
             aws configure set region $REGION
             aws ec2 describe-instances --query 'Reservations[*].Instances[*].[PrivateIpAddress,Tags[?Key==`Name`].Value|[0],State.Name]' --output text |column -t >/tmp/$$
