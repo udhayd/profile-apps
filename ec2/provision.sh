@@ -31,4 +31,4 @@ source vars.sh
 set -ex
 
 # EC2 Stack Creation
-aws cloudformation deploy --template-file ec2.yaml --stack-name $EC2_STACK_NAME --no-fail-on-empty-changeset --capabilities CAPABILITY_IAM
+aws cloudformation deploy --template-file ec2.yaml --stack-name $EC2_STACK_NAME --no-fail-on-empty-changeset --capabilities CAPABILITY_NAMED_IAM
