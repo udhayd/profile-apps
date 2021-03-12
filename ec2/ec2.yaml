@@ -254,15 +254,15 @@ Resources:
          - IpProtocol: tcp
            FromPort: 3306
            ToPort: 3306
-           SourceSecurityGroupId: !GetAtt FronEndSG.GroupId
+           SourceSecurityGroupId: !GetAtt FrontEndSG.GroupId
          - IpProtocol: tcp
            FromPort: 5672
            ToPort: 5672
-           SourceSecurityGroupId: !GetAtt FronEndSG.GroupId
+           SourceSecurityGroupId: !GetAtt FrontEndSG.GroupId
          - IpProtocol: tcp
            FromPort: 11211
            ToPort: 11211
-           SourceSecurityGroupId: !GetAtt FronEndSG.GroupId
+           SourceSecurityGroupId: !GetAtt FrontEndSG.GroupId
 
   InstanceProfile:
     Type: AWS::IAM::InstanceProfile
@@ -296,9 +296,3 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
-Outputs:
-  EC2InstanceID:
-    Description: The EC2 Instance ID
-    Value: !Ref EC2Instance
-    Export:
-      Name: !Sub "${AWS::StackName}-Instance-ID"

@@ -1,1 +1,1 @@
-EC2_STACK_NAME=apps-ec2
+EC2_STACK_NAME=test-ec2
