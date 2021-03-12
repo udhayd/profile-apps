@@ -204,8 +204,8 @@ Resources:
             sleep 100
             REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone| sed 's/.$//')
             aws configure set region $REGION
-            aws ec2 describe-instances --query 'Reservations[*].Instances[*].[Tags[?Key==`Name`].Value|[0],PrivateIpAddress,State.Name]' --output text |column -t >/tmp/$$
-            cat /tmp/$$|egrep -v 'stopping|stopped|shutting-down|terminated'
+            aws ec2 describe-instances --query 'Reservations[*].Instances[*].[PrivateIpAddress,Tags[?Key==`Name`].Value|[0],State.Name]' --output text |column -t >/tmp/$$
+            cat /tmp/$$|egrep -v 'stopping|stopped|shutting-down|terminated'|awk '{print $1, $2}'|column -t >>/etc/hosts
             
 
   WebAppSG:
