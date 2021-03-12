@@ -1,0 +1,174 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Jenkins Instance Creation
+
+Parameters:
+  InstanceType:
+    Description: Instance type to launch
+    Type: String
+    Default: t2.micro
+  ImageId:
+    Description: AMI Id
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+
+Resources:
+
+  memnode:
+    Type: AWS::EC2::Instance
+    Properties:
+      IamInstanceProfile:
+        Ref: InstanceProfile
+      ImageId:
+        Ref: ImageId
+      InstanceType:
+        Ref: InstanceType
+      SecurityGroupIds:
+        - Ref: BackEndSG
+      SubnetId:
+        Fn::ImportValue: PublicSubnet1ID
+      Tags:
+        - Key: Name
+          Value: mem-node
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/bin/bash
+            set -x 
+            sudo yum install epel-release -y
+            sudo yum install memcached -y
+            sudo systemctl start memcached
+            sudo systemctl enable memcached
+            sudo systemctl status memcached
+            sudo memcached -p 11211 -U 11111 -u memcached -d
+
+  db2node:
+    Type: AWS::EC2::Instance
+    Properties:
+      IamInstanceProfile:
+        Ref: InstanceProfile
+      ImageId:
+        Ref: ImageId
+      InstanceType:
+        Ref: InstanceType
+      SecurityGroupIds:
+        - Ref: BackEndSG
+      SubnetId:
+        Fn::ImportValue: PublicSubnet1ID
+      Tags:
+        - Key: Name
+          Value: db-node
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/bin/bash
+            set -x
+            DATABASE_PASS='admin123'
+            sudo yum update -y
+            sudo yum install epel-release -y
+            sudo yum install git zip unzip -y
+            sudo yum install mariadb-server -y
+            ## starting & enabling mariadb-server
+            sudo systemctl start mariadb
+            sudo systemctl enable mariadb
+            cd /tmp/
+            git clone -b aws-ls https://github.com/udhayd/profile-app.git
+            ##restore the dump file for the application
+            sudo mysqladmin -u root password "$DATABASE_PASS"
+            sudo mysql -u root -p"$DATABASE_PASS" -e "UPDATE mysql.user SET Password=PASSWORD('$DATABASE_PASS') WHERE User='root'"
+            sudo mysql -u root -p"$DATABASE_PASS" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1')"
+            sudo mysql -u root -p"$DATABASE_PASS" -e "DELETE FROM mysql.user WHERE User=''"
+            sudo mysql -u root -p"$DATABASE_PASS" -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\_%'"
+            sudo mysql -u root -p"$DATABASE_PASS" -e "FLUSH PRIVILEGES"
+            sudo mysql -u root -p"$DATABASE_PASS" -e "create database accounts"
+            sudo mysql -u root -p"$DATABASE_PASS" -e "grant all privileges on accounts.* TO 'admin'@'localhost' identified by 'admin123'"
+            sudo mysql -u root -p"$DATABASE_PASS" -e "grant all privileges on accounts.* TO 'admin'@'%' identified by 'admin123'"
+            sudo mysql -u root -p"$DATABASE_PASS" accounts < /tmp/profile-app/ec2/src/main/resources/db_backup.sql
+            sudo mysql -u root -p"$DATABASE_PASS" -e "FLUSH PRIVILEGES"
+            ## Restart mariadb-server
+            sudo systemctl restart mariadb
+
+  WebAppSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName:
+        Fn::Sub: "${AWS::StackName}-Webapp-SG"
+      GroupDescription:
+        Fn::Sub: "${AWS::StackName}-Webapp-SG"
+      VpcId:
+        Fn::ImportValue: MyVPCID
+      SecurityGroupIngress:
+         - IpProtocol: tcp
+           CidrIp: 0.0.0.0/0
+           FromPort: 80
+           ToPort: 80
+         - IpProtocol: tcp
+           CidrIp: 0.0.0.0/0
+           FromPort: 443
+           ToPort: 443
+
+  FrontEndSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName:
+        Fn::Sub: "${AWS::StackName}-Frontend-SG"
+      GroupDescription:
+        Fn::Sub: "${AWS::StackName}-Frontend-SG"
+      VpcId:
+        Fn::ImportValue: MyVPCID
+      SecurityGroupIngress:
+         - IpProtocol: tcp
+           FromPort: 8080
+           ToPort: 8080
+           SourceSecurityGroupId: !GetAtt WebAppSG.GroupId
+
+  BackEndSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName:
+        Fn::Sub: "${AWS::StackName}-Backend-SG"
+      GroupDescription:
+        Fn::Sub: "${AWS::StackName}-Backend-SG"
+      VpcId:
+        Fn::ImportValue: MyVPCID
+      SecurityGroupIngress:
+         - IpProtocol: tcp
+           FromPort: 3306
+           ToPort: 3306
+           SourceSecurityGroupId: !GetAtt FronEndSG.GroupId
+         - IpProtocol: tcp
+           FromPort: 5672
+           ToPort: 5672
+           SourceSecurityGroupId: !GetAtt FronEndSG.GroupId
+         - IpProtocol: tcp
+           FromPort: 11211
+           ToPort: 11211
+           SourceSecurityGroupId: !GetAtt FronEndSG.GroupId
+
+  InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - Ref: InstanceRole
+
+  InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          -
+            Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+Outputs:
+  EC2InstanceID:
+    Description: The EC2 Instance ID
+    Value: !Ref EC2Instance
+    Export:
+      Name: !Sub "${AWS::StackName}-Instance-ID"
