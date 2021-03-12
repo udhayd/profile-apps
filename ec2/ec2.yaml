@@ -208,6 +208,66 @@ Resources:
             cat /tmp/$$|egrep -v 'stopping|stopped|shutting-down|terminated'|awk '{print $1, $2}'|column -t >>/etc/hosts
             
 
+  LoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub '${AWS::StackName}-LB'
+      Scheme: internet-facing
+      Type: application
+      Subnets: 
+        - Fn::ImportValue: PublicSubnet1ID
+        - Fn::ImportValue: PublicSubnet2ID
+      SecurityGroups:
+        - Ref: WebAppSG
+      Tags:
+        - Key: Name
+          Value:
+            Fn::Sub: "${AWS::StackName}-LB"
+      LoadBalancerAttributes:
+        - Key: load_balancing.cross_zone.enabled
+          Value: "true"
+
+  TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub '${AWS::StackName}-TG'
+      Port: 8080
+      Protocol: TCP
+      HealthCheckPort: "8080"
+      TargetType: instance
+      Targets:
+        - Id: !Ref appnode
+          Port: 8080
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '20'
+      VpcId:
+        Fn::ImportValue: MyVPCID
+        
+#  HTTPSListener:
+#    Type: AWS::ElasticLoadBalancingV2::Listener
+#    Properties:
+#      Certificates: 
+#        - CertificateArn: !Ref CER
+#      DefaultActions:
+#        - Type: forward
+#          TargetGroupArn:
+#            Ref: TargetGroup
+#      LoadBalancerArn: !Ref 'LoadBalancer'
+#      Port: 443
+#      Protocol: TLS
+      
+  HTTPListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn:
+            Ref: TargetGroup
+      LoadBalancerArn: !Ref 'LoadBalancer'
+      Port: 80
+      Protocol: HTTP
+  
   WebAppSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
