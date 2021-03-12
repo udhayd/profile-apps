@@ -11,8 +11,7 @@ Parameters:
     Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
 
-Resources:
-
+Resources:            
   memnode:
     Type: AWS::EC2::Instance
     Properties:
@@ -28,20 +27,20 @@ Resources:
         Fn::ImportValue: PublicSubnet1ID
       Tags:
         - Key: Name
-          Value: mem-node
+          Value: mc01
       UserData:
         Fn::Base64:
           Fn::Sub: |
             #!/bin/bash
             set -x 
-            sudo yum install epel-release -y
-            sudo yum install memcached -y
-            sudo systemctl start memcached
-            sudo systemctl enable memcached
-            sudo systemctl status memcached
-            sudo memcached -p 11211 -U 11111 -u memcached -d
+            yum install epel-release -y
+            yum install memcached -y
+            systemctl start memcached
+            systemctl enable memcached
+            systemctl status memcached
+            memcached -p 11211 -U 11111 -u memcached -d
 
-  db2node:
+  rbmqnode:
     Type: AWS::EC2::Instance
     Properties:
       IamInstanceProfile:
@@ -56,36 +55,157 @@ Resources:
         Fn::ImportValue: PublicSubnet1ID
       Tags:
         - Key: Name
-          Value: db-node
+          Value: rmq01
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/bin/bash
+            set -x 
+            yum install epel-release socat wget ncurses-compat-libs -y
+            echo '[rabbitmq_erlang]
+            name=rabbitmq_erlang
+            baseurl=https://packagecloud.io/rabbitmq/erlang/el/7/$basearch
+            repo_gpgcheck=1
+            gpgcheck=0
+            enabled=1
+            gpgkey=https://packagecloud.io/rabbitmq/erlang/gpgkey
+            sslverify=1
+            sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+            metadata_expire=300
+
+            [rabbitmq_rabbitmq-server]
+            name=rabbitmq_rabbitmq-server
+            baseurl=https://packagecloud.io/rabbitmq/rabbitmq-server/el/7/$basearch
+            repo_gpgcheck=1
+            gpgcheck=0
+            enabled=1
+            gpgkey=https://packagecloud.io/rabbitmq/rabbitmq-server/gpgkey
+            sslverify=1
+            sslcacert=/etc/pki/tls/certs/ca-bundle.crt
+            metadata_expire=300' >/etc/yum.repos.d/rabbitmq.repo
+            yum install erlang -y
+            yum install rabbitmq-server -y
+            systemctl start rabbitmq-server
+            systemctl enable rabbitmq-server
+            systemctl status rabbitmq-server
+            sh -c 'echo "[{rabbit, [{loopback_users, []}]}]." > /etc/rabbitmq/rabbitmq.config'
+            rabbitmqctl add_user test test
+            rabbitmqctl set_user_tags test administrator
+            systemctl restart rabbitmq-server
+            
+
+  dbnode:
+    Type: AWS::EC2::Instance
+    Properties:
+      IamInstanceProfile:
+        Ref: InstanceProfile
+      ImageId:
+        Ref: ImageId
+      InstanceType:
+        Ref: InstanceType
+      SecurityGroupIds:
+        - Ref: BackEndSG
+      SubnetId:
+        Fn::ImportValue: PublicSubnet1ID
+      Tags:
+        - Key: Name
+          Value: db01
       UserData:
         Fn::Base64:
           Fn::Sub: |
             #!/bin/bash
             set -x
             DATABASE_PASS='admin123'
-            sudo yum update -y
-            sudo yum install epel-release -y
-            sudo yum install git zip unzip -y
-            sudo yum install mariadb-server -y
+            yum install epel-release git zip unzip mariadb-server -y
             ## starting & enabling mariadb-server
-            sudo systemctl start mariadb
-            sudo systemctl enable mariadb
+            systemctl start mariadb
+            systemctl enable mariadb
             cd /tmp/
-            git clone -b aws-ls https://github.com/udhayd/profile-app.git
+            git clone -b aws-ls https://github.com/udhayd/profile-apps.git
             ##restore the dump file for the application
-            sudo mysqladmin -u root password "$DATABASE_PASS"
-            sudo mysql -u root -p"$DATABASE_PASS" -e "UPDATE mysql.user SET Password=PASSWORD('$DATABASE_PASS') WHERE User='root'"
-            sudo mysql -u root -p"$DATABASE_PASS" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1')"
-            sudo mysql -u root -p"$DATABASE_PASS" -e "DELETE FROM mysql.user WHERE User=''"
-            sudo mysql -u root -p"$DATABASE_PASS" -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\_%'"
-            sudo mysql -u root -p"$DATABASE_PASS" -e "FLUSH PRIVILEGES"
-            sudo mysql -u root -p"$DATABASE_PASS" -e "create database accounts"
-            sudo mysql -u root -p"$DATABASE_PASS" -e "grant all privileges on accounts.* TO 'admin'@'localhost' identified by 'admin123'"
-            sudo mysql -u root -p"$DATABASE_PASS" -e "grant all privileges on accounts.* TO 'admin'@'%' identified by 'admin123'"
-            sudo mysql -u root -p"$DATABASE_PASS" accounts < /tmp/profile-app/ec2/src/main/resources/db_backup.sql
-            sudo mysql -u root -p"$DATABASE_PASS" -e "FLUSH PRIVILEGES"
+            mysqladmin -u root password "$DATABASE_PASS"
+            mysql -u root -p"$DATABASE_PASS" -e "UPDATE mysql.user SET Password=PASSWORD('$DATABASE_PASS') WHERE User='root'"
+            mysql -u root -p"$DATABASE_PASS" -e "DELETE FROM mysql.user WHERE User='root' AND Host NOT IN ('localhost', '127.0.0.1', '::1')"
+            mysql -u root -p"$DATABASE_PASS" -e "DELETE FROM mysql.user WHERE User=''"
+            mysql -u root -p"$DATABASE_PASS" -e "DELETE FROM mysql.db WHERE Db='test' OR Db='test\_%'"
+            mysql -u root -p"$DATABASE_PASS" -e "FLUSH PRIVILEGES"
+            mysql -u root -p"$DATABASE_PASS" -e "create database accounts"
+            mysql -u root -p"$DATABASE_PASS" -e "grant all privileges on accounts.* TO 'admin'@'localhost' identified by 'admin123'"
+            mysql -u root -p"$DATABASE_PASS" -e "grant all privileges on accounts.* TO 'admin'@'%' identified by 'admin123'"
+            mysql -u root -p"$DATABASE_PASS" accounts < /tmp/profile-apps/src/main/resources/db_backup.sql
+            mysql -u root -p"$DATABASE_PASS" -e "FLUSH PRIVILEGES"
             ## Restart mariadb-server
-            sudo systemctl restart mariadb
+            systemctl restart mariadb
+
+  appnode:
+    Type: AWS::EC2::Instance
+    Properties:
+      IamInstanceProfile:
+        Ref: InstanceProfile
+      ImageId:
+        Ref: ImageId
+      InstanceType:
+        Ref: InstanceType
+      SecurityGroupIds:
+        - Ref: FrontEndSG
+      SubnetId:
+        Fn::ImportValue: PublicSubnet1ID
+      Tags:
+        - Key: Name
+          Value: app01
+      UserData:
+        Fn::Base64:
+          Fn::Sub: |
+            #!/bin/bash
+            set -x 
+            TOMURL="https://archive.apache.org/dist/tomcat/tomcat-8/v8.5.37/bin/apache-tomcat-8.5.37.tar.gz"
+            yum install java-1.8.0-openjdk -y
+            yum install git maven wget -y
+            cd /tmp/
+            wget $TOMURL -O tomcatbin.tar.gz
+            EXTOUT=`tar xzvf tomcatbin.tar.gz`
+            TOMDIR=`echo $EXTOUT | cut -d '/' -f1`
+            useradd --shell /sbin/nologin tomcat
+            rsync -avzh /tmp/$TOMDIR/ /usr/local/tomcat8/
+            chown -R tomcat.tomcat /usr/local/tomcat8
+
+            rm -rf /etc/systemd/system/tomcat.service
+
+            cat <<EOT>> /etc/systemd/system/tomcat.service
+            [Unit]
+            Description=Tomcat
+            After=network.target
+            [Service]
+            User=tomcat
+            WorkingDirectory=/usr/local/tomcat8
+            Environment=JRE_HOME=/usr/lib/jvm/jre
+            Environment=JAVA_HOME=/usr/lib/jvm/jre
+            Environment=CATALINA_HOME=/usr/local/tomcat8
+            Environment=CATALINE_BASE=/usr/local/tomcat8
+            ExecStart=/usr/local/tomcat8/bin/catalina.sh run
+            ExecStop=/usr/local/tomcat8/bin/shutdown.sh
+            SyslogIdentifier=tomcat-%i
+            [Install]
+            WantedBy=multi-user.target
+            EOT
+            systemctl daemon-reload
+            systemctl start tomcat
+            systemctl enable tomcat
+            git clone -b aws-ls https://github.com/udhayd/profile-apps.git
+            cd profile-apps
+            mvn install
+            systemctl stop tomcat
+            sleep 120
+            rm -rf /usr/local/tomcat8/webapps/ROOT*
+            cp target/vprofile-v2.war /usr/local/tomcat8/webapps/ROOT.war
+            systemctl start tomcat
+            sleep 300
+            cp /vprofile-vm-data/application.properties /usr/local/tomcat8/webapps/ROOT/WEB-INF/classes/application.properties
+            systemctl restart tomcat8
+            sleep 100
+            REGION=$(curl -s http://169.254.169.254/latest/meta-data/placement/availability-zone| sed 's/.$//')
+            aws configure set region $REGION
+            aws ec2 describe-instances --query 'Reservations[*].Instances[*].[Tags[?Key==`Name`].Value|[0],PrivateIpAddress]' --output text |column -t >>/etc/hosts
 
   WebAppSG:
     Type: AWS::EC2::SecurityGroup
@@ -163,6 +283,16 @@ Resources:
                 - ec2.amazonaws.com
             Action:
               - sts:AssumeRole
+        Policies:
+          - PolicyName: ec2-describe
+            PolicyDocument:
+              Version: 2012-10-17
+              Statement:
+                - Sid: VisualEditor0
+                  Effect: Allow
+                  Action:
+                    - ec2:Describe*
+                  Resource: '*'
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
         - arn:aws:iam::aws:policy/AmazonS3FullAccess
